@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tapeout Bracelet · Texas Hold'em</title>
+<link rel="stylesheet" href="css/style.css">
+<script src="js/ethers.umd.min.js"></script>
+<script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
+</head>
+<body>
+
+<nav class="topbar">
+  <div class="topbar-left">
+    <span class="logo">⚡ tapeoutbracelet</span>
+    <a class="nav-link active" data-nav="lobby" data-i18n="navLobby">大厅</a>
+    <a class="nav-link" data-nav="rules" data-i18n="navRules">规则</a>
+    <a class="nav-link" data-nav="myNumbers" data-i18n="navMyNumbers">我的数据</a>
+  </div>
+  <div class="topbar-right">
+    <select id="langSelect" class="lang-select">
+      <option value="zh">中文</option>
+      <option value="en">English</option>
+    </select>
+    <span class="status-pill" id="statusPill"><span class="dot"></span><span id="statusLabel" data-i18n="noTables">0 桌开放</span></span>
+    <button class="btn-wallet" id="connectWalletBtn" data-i18n="connectWallet">连接钱包</button>
+  </div>
+</nav>
+
+<main id="lobbyScreen" class="screen">
+  <div class="lobby-container">
+
+    <div class="mode-switch">
+      <button class="mode-tab active" data-mode="ai">
+        <span class="mode-dot blue"></span> <span data-i18n="tabAi">AI 练习场</span>
+      </button>
+      <button class="mode-tab" data-mode="points">
+        <span class="mode-dot green"></span> <span data-i18n="tabPoints">积分场 · 真人</span>
+      </button>
+      <button class="mode-tab" data-mode="real">
+        <span class="mode-dot gold"></span> <span data-i18n="tabReal">链上场 · BEM</span>
+      </button>
+    </div>
+
+    <!-- AI 练习场 -->
+    <section id="aiSection" class="mode-section">
+      <div class="hero-card hero-ai">
+        <div class="hero-left">
+          <div class="hero-badge"><span class="dot blue"></span> <span data-i18n="aiBadge">单机练习 · 无限筹码</span></div>
+          <h1 class="hero-title" data-i18n="aiTitle">无限筹码<br>随便练手</h1>
+          <p class="hero-desc" data-i18n="aiDesc">和 AI 对手打牌，不花钱、不注册、不需要钱包。适合熟悉规则、练习 GTO 打法。</p>
+          <div class="hero-actions">
+            <button class="btn-hero-primary" id="quickAiBtn" data-i18n="quickSeat">⚡ 快速入座</button>
+            <button class="btn-hero-secondary" data-nav="rules" data-i18n="howToPlay">怎么玩？</button>
+          </div>
+        </div>
+        <div class="hero-right">
+          <div class="wallet-card">
+            <div class="wallet-row">
+              <span class="wallet-label" data-i18n="myAiChips">我的 AI 场筹码</span>
+              <span class="wallet-value gold" id="aiTotalChips">0</span>
+            </div>
+            <div class="wallet-row">
+              <span class="wallet-label" data-i18n="aiWinTotal">累计赢得</span>
+              <span class="wallet-value" id="aiTotalWon">+0</span>
+            </div>
+            <div class="wallet-divider"></div>
+            <div class="wallet-row">
+              <select id="aiRebuyAmount" class="small-select">
+                <option value="1000">+1,000</option>
+                <option value="5000" selected>+5,000</option>
+                <option value="10000">+10,000</option>
+                <option value="50000">+50,000</option>
+              </select>
+              <button class="mini-btn" id="aiRebuyBtn" data-i18n="rebuy">补码</button>
+            </div>
+            <div class="wallet-note" data-i18n="aiRebuyNote">筹码跨局累积；赢的每一分都算进总额</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="activity-ticker">
+        <span class="ticker-tag" data-i18n="justNow">刚刚</span>
+        <div class="ticker-track">
+          <span class="ticker-item" data-i18n="ticker1">玩家9021 在 AI 练习场赢下 +5,834</span>
+          <span class="ticker-item" data-i18n="ticker2">玩家7745 完成 100 手练习</span>
+          <span class="ticker-item" data-i18n="ticker3">玩家0092 在 AI 练习场赢下 +3,566</span>
+          <span class="ticker-item" data-i18n="ticker4">玩家2210 在 AI 练习场赢下 +500</span>
+        </div>
+      </div>
+
+      <div class="section-heading-row">
+        <h2 class="section-heading" data-i18n="chooseLevel">选择盲注等级</h2>
+        <div class="seats-picker">
+          <span class="seats-picker-label" data-i18n="tableSeats">桌人数</span>
+          <button class="seats-btn" data-seats="4">4</button>
+          <button class="seats-btn" data-seats="5">5</button>
+          <button class="seats-btn active" data-seats="6">6</button>
+          <button class="seats-btn" data-seats="7">7</button>
+        </div>
+      </div>
+      <div class="table-grid" id="aiTableGrid"></div>
+    </section>
+
+    <!-- 积分场 -->
+    <section id="pointsSection" class="mode-section hidden">
+      <div class="hero-card hero-points">
+        <div class="hero-left">
+          <div class="hero-badge"><span class="dot green"></span> <span data-i18n="pointsBadge">积分场 · 真人 · 每日送 10,000</span></div>
+          <h1 class="hero-title" data-i18n="pointsTitle">真人同桌<br>不花钱也能玩</h1>
+          <p class="hero-desc" data-i18n="pointsDesc">每天送 10,000 积分，和真人同桌打。创建一个房间，把房间号发给朋友即可同桌。</p>
+          <div class="hero-actions">
+            <button class="btn-hero-primary" id="claimPointsBtn" data-i18n="claimPoints">🎁 领取今天的 10,000 积分</button>
+          </div>
+        </div>
+        <div class="hero-right">
+          <div class="wallet-card">
+            <div class="wallet-row">
+              <span class="wallet-label" data-i18n="myPoints">我的积分</span>
+              <span class="wallet-value gold" id="pointsBalance">0</span>
+            </div>
+            <div class="wallet-row">
+              <span class="wallet-label" data-i18n="streak">连续签到</span>
+              <span class="wallet-value" id="pointsStreak">第 1 天</span>
+            </div>
+            <div class="wallet-divider"></div>
+            <div class="wallet-row">
+              <input type="text" id="nicknameInput" class="small-select" placeholder="给自己起个名字" maxlength="12">
+              <button class="mini-btn" id="saveNicknameBtn" data-i18n="confirm">确定</button>
+            </div>
+            <div class="wallet-note" data-i18n="pointsNote">积分只用来玩，不能充值、提现，也不能换成 BEM</div>
+            <div class="wallet-warning" data-i18n="pointsStorageWarning">⚠️ 积分保存在本浏览器，换设备或清除数据后会丢失。想跨设备保留请连接钱包。</div>
+          </div>
+        </div>
+      </div>
+
+      <h2 class="section-heading" data-i18n="pointsTables">积分牌桌（真人对战 · 2-7 人）</h2>
+      <div class="room-list" id="pointsRoomList"></div>
+      <div class="table-grid" id="pointsTableGrid"></div>
+    </section>
+
+    <!-- 链上场 -->
+    <section id="realSection" class="mode-section hidden">
+      <div class="hero-card hero-real">
+        <div class="hero-left">
+          <div class="hero-badge"><span class="dot gold"></span> <span data-i18n="realBadge">全链上 · BEM 结算 · 真人</span></div>
+          <h1 class="hero-title" data-i18n="realTitle">真金白银<br>链上公平</h1>
+          <p class="hero-desc" data-i18n="realDesc">连接币安 Web3 钱包，充 BEM 换筹码，和真人同桌打。P2P 直连 + 链上结算。</p>
+          <div class="hero-actions">
+            <button class="btn-hero-primary" id="realConnectBtn" data-i18n="connectWallet">连接钱包</button>
+          </div>
+        </div>
+        <div class="hero-right">
+          <div class="wallet-card">
+            <div class="wallet-row">
+              <span class="wallet-label" data-i18n="walletBem">钱包 BEM 余额</span>
+              <span class="wallet-value" id="walletBemBalance">0.0000</span>
+            </div>
+            <div class="wallet-row">
+              <span class="wallet-label" data-i18n="realBalance">对战场筹码</span>
+              <span class="wallet-value gold" id="realBalance">0</span>
+            </div>
+            <div class="wallet-row">
+              <span class="wallet-label" data-i18n="walletAddr">钱包地址</span>
+              <span class="wallet-addr" id="walletAddress">未连接</span>
+            </div>
+            <div class="wallet-divider"></div>
+            <div class="wallet-row">
+              <input type="number" id="depositAmount" class="small-select" placeholder="充值 BEM" min="1" step="1">
+              <button class="mini-btn" id="depositBtn" data-i18n="deposit">充值</button>
+            </div>
+            <div class="wallet-note" data-i18n="depositNote">充值收 2% 手续费；离桌后退回钱包</div>
+          </div>
+        </div>
+      </div>
+
+      <h2 class="section-heading" data-i18n="realTables">链上牌桌（真人对战 · 2-7 人）</h2>
+      <div class="room-list" id="realRoomList"></div>
+      <div class="table-grid" id="realTableGrid"></div>
+    </section>
+
+    <div class="lobby-footer">
+      <p data-i18n="footer1">1 筹码 = 0.0001 BEM。抽水只在看到翻牌的牌局中收取：底池的 1%，上限 1 个大盲。</p>
+      <p class="muted" data-i18n="footer2">无游戏服务器：牌堆由每位玩家共同加密洗牌，每条消息都签名，每手牌事后都可审计。</p>
+    </div>
+  </div>
+</main>
+
+<main id="rulesScreen" class="screen hidden">
+  <div class="rules-container">
+    <h1 class="page-title" data-i18n="rulesTitle">发牌：没有任何人知道整副牌的顺序</h1>
+    <p class="page-desc" data-i18n="rulesDesc">没有庄家、没有发牌服务器。牌堆由全桌每位玩家共同洗牌，只有你能翻开自己的底牌，每一手结束后都可审计。</p>
+    <div class="rule-grid">
+      <section class="rule-card"><div class="rule-num">1</div><h3 data-i18n="rule1Title">发牌</h3><p data-i18n="rule1Body">每手开始每位玩家生成临时密钥并公开公钥，合成联合公钥。52 张牌以公开编号开始，从庄位起每人重新加密、置换、广播。最终顺序是所有人洗牌的叠加——只要一人诚实，结果就是均匀随机。</p></section>
+      <section class="rule-card"><div class="rule-num">2</div><h3 data-i18n="rule2Title">审计：赛后人人可查</h3><p data-i18n="rule2Body">每手打完所有人公开私钥，全桌重放洗牌，验证每一步都是合法置换，作弊者当场点名。公开后整副牌可读，包括弃掉的底牌。</p></section>
+      <section class="rule-card"><div class="rule-num">3</div><h3 data-i18n="rule3Title">筹码、买入、抽水</h3><p data-i18n="rule3Body">1 筹码 = 0.0001 BEM。链上场入座时把 BEM 换成筹码，离桌时换回。抽水只在看到翻牌的牌局中收取，按底池的 1% 计算、上限 1 个大盲。</p></section>
+      <section class="rule-card"><div class="rule-num">4</div><h3 data-i18n="rule4Title">三种模式</h3><p data-i18n="rule4Body">AI 练习场：单机，和 4-7 个 AI 对手打，无限筹码。积分场：MQTT 真人联机，2-7 人开桌，每天领 10,000 积分。链上场：MQTT 真人联机 + BEM 链上结算，2-7 人开桌。</p></section>
+      <section class="rule-card"><div class="rule-num">5</div><h3 data-i18n="rule5Title">离桌与结算</h3><p data-i18n="rule5Body">离桌时剩余筹码：AI 练习场加回筹码总额，积分场退回积分，链上场退回到对战场筹码。链上场的 BEM 提现需要调用你部署的合约 withdraw 函数。</p></section>
+      <section class="rule-card"><div class="rule-num">6</div><h3 data-i18n="rule6Title">断线不能赖账</h3><p data-i18n="rule6Body">轮到你下注 30 秒无回应，按弃牌处理。刷新页面不会丢座：45 秒内回来，页面会从本地快照接上。</p></section>
+      <section class="rule-card"><div class="rule-num">7</div><h3 data-i18n="rule7Title">你在信任什么</h3><p data-i18n="rule7Body">牌的随机性：只要一个人诚实，牌就是随机的。底牌保密：解开需要全桌份额。筹码：链上场由合约托管，只按全桌签名的收据结算。</p></section>
+      <section class="rule-card"><div class="rule-num">8</div><h3 data-i18n="rule8Title">和其他线上德州扑克不一样的地方</h3><p data-i18n="rule8Body">发牌：没有服务器参与。钱：钱包就是身份，BEM 换成筹码存进合约，离桌后从合约取回。可查：每手审计后整副牌公开，弃掉的牌也看得到。</p></section>
+    </div>
+  </div>
+</main>
+
+<main id="myNumbersScreen" class="screen hidden">
+  <div class="numbers-container">
+    <div class="numbers-header">
+      <h1 class="page-title" data-i18n="myNumbersTitle">我的数据</h1>
+      <span class="numbers-sub" data-i18n="myNumbersSub">0 桌 · 钱包 未连接</span>
+    </div>
+    <div class="stats-hero">
+      <div class="stat-big"><div class="stat-big-value positive" id="numNet">+0</div><div class="stat-big-label" data-i18n="statTotalPnl">总盈亏（筹码）</div></div>
+      <div class="stat-cell"><span data-i18n="statTables">打过的桌</span><strong id="numTables">0</strong></div>
+      <div class="stat-cell"><span data-i18n="statHands">手数</span><strong id="numTotalHands">0</strong></div>
+      <div class="stat-cell"><span data-i18n="statWinRate2">赢下底池的比例</span><strong id="numWinRate">0%</strong></div>
+      <div class="stat-cell"><span data-i18n="statBiggest">最大底池</span><strong id="numBiggest">0</strong></div>
+      <div class="stat-cell"><span data-i18n="statTotalBuyIn">累计买入</span><strong id="numTotalBuyIn">0</strong></div>
+      <div class="stat-cell"><span data-i18n="statTotalCashout">累计取回</span><strong id="numTotalCashout">0</strong></div>
+    </div>
+    <div class="curve-placeholder"><div class="curve-text" data-i18n="curveHint">打过两桌以上会画出累计曲线</div></div>
+    <h2 class="section-heading" data-i18n="sessionsHeading">桌次</h2>
+    <div class="sessions-table">
+      <div class="session-row session-head">
+        <span data-i18n="colTable">桌</span><span data-i18n="colBlinds">盲注</span><span data-i18n="colBuyIn">买入</span><span data-i18n="colCashout">取回</span>
+        <span data-i18n="colPnl">盈亏</span><span data-i18n="colHands">手数</span><span data-i18n="colWon">赢下</span><span data-i18n="colStatus">状态</span>
+      </div>
+      <div id="sessionsBody"></div>
+    </div>
+    <button class="mini-btn ghost" id="resetNumbersBtn" style="margin-top:16px;" data-i18n="resetNumbers">清空战绩</button>
+  </div>
+</main>
+
+<main id="gameScreen" class="screen hidden">
+  <div class="game-topbar">
+    <button class="btn-back" id="backToLobbyBtn">← <span data-i18n="backToLobby">大厅</span></button>
+    <div class="game-info">
+      <span id="gameLevelLabel">Nano 1/2</span>
+      <span class="sep">·</span>
+      <span id="gameHandLabel">第 0 手</span>
+      <span class="sep">·</span>
+      <span id="gameModeLabel" class="mode-tag">AI 练习</span>
+      <span class="sep">·</span>
+      <span class="stage-pill" id="stageLabel">翻牌前</span>
+    </div>
+    <div class="game-right">
+      <span class="status-pill" id="gameWalletPill"><span class="dot"></span><span>AI 练习模式</span></span>
+    </div>
+  </div>
+
+  <div id="onlineLobby" class="online-lobby hidden">
+    <div class="online-lobby-card">
+      <h2 data-i18n="waitingRoomTitle">联机等待室</h2>
+      <div class="online-lobby-row">
+        <span class="online-lobby-label" data-i18n="roomCode">房间号</span>
+        <div class="online-lobby-code" id="onlineLobbyCode">—</div>
+        <button class="mini-btn" id="copyRoomBtn" data-i18n="copy">复制</button>
+      </div>
+      <div class="online-lobby-row">
+        <span class="online-lobby-label" data-i18n="playersOnline">在线人数</span>
+        <span class="online-lobby-count" id="onlineLobbyCount">0 / 7</span>
+      </div>
+      <div class="online-lobby-list" id="onlineLobbyList"></div>
+      <div class="online-lobby-actions">
+        <button class="btn-primary" id="onlineReadyBtn" data-i18n="ready">准备好了</button>
+        <button class="btn-secondary" id="onlineLeaveBtn" data-i18n="leaveTable">离桌</button>
+      </div>
+      <div class="online-lobby-hint" data-i18n="waitingHint">至少需要 2 人才能开始</div>
+    </div>
+  </div>
+
+  <div class="game-layout">
+    <aside class="side-left">
+      <div class="panel">
+        <div class="panel-title" data-i18n="logTitle">牌局记录</div>
+        <div class="log-area" id="logArea"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title" data-i18n="handInfoTitle">本手信息</div>
+        <div class="hand-info" id="handInfo"></div>
+      </div>
+    </aside>
+    <div class="table-area">
+      <div class="dealer-seat" id="dealerSeat">
+        <div class="dealer-avatar">🎩</div>
+        <div class="dealer-name" data-i18n="dealer">荷官</div>
+      </div>
+      <div class="poker-table" id="pokerTable">
+        <div class="table-center">
+          <div class="shuffle-deck" id="shuffleDeck">
+            <div class="shuffle-card c1"></div>
+            <div class="shuffle-card c2"></div>
+            <div class="shuffle-card c3"></div>
+          </div>
+          <div class="pot-display">
+            <span class="pot-label" data-i18n="potLabel">底池</span>
+            <span class="pot-value" id="potMain">0</span>
+            <span class="pot-side hidden" id="potSideWrap">· <span data-i18n="sidePotLabel">边池</span> <span id="potSide">0</span></span>
+          </div>
+          <div class="board-cards" id="boardCards"></div>
+        </div>
+        <div class="seats-layer" id="seatsLayer"></div>
+      </div>
+    </div>
+    <aside class="side-right">
+      <div class="hand-panel-head">
+        <span class="hand-label" data-i18n="yourHand">你的手牌</span>
+        <span class="hand-bem" id="handBem">≈ 0 BEM</span>
+      </div>
+      <div class="hand-cards-large" id="handCardsLarge"></div>
+      <div class="turn-timer" id="turnTimer">
+        <div class="timer-bar"><div class="timer-fill" id="timerFill"></div></div>
+        <span class="timer-text" id="timerText">30s</span>
+      </div>
+      <div class="human-controls" id="humanControls">
+        <div class="human-actions" id="humanActions"></div>
+        <div class="raise-panel hidden" id="raisePanel">
+          <div class="raise-amount-display"><span id="raiseAmountValue">0</span></div>
+          <input type="range" id="raiseSlider" class="raise-slider" min="0" max="1000" value="0">
+          <div class="raise-minmax"><span id="raiseMinLabel">0</span><span id="raiseMaxLabel">0</span></div>
+          <div class="raise-presets" id="raisePresets">
+            <button data-preset="half" data-i18n="presetHalf">1/2 池</button>
+            <button data-preset="threeQuarter" data-i18n="presetThreeQuarter">3/4 池</button>
+            <button data-preset="pot" data-i18n="presetPot">底池</button>
+            <button data-preset="allin" class="allin" data-i18n="presetAllin">全下</button>
+          </div>
+          <div class="raise-buttons">
+            <button class="btn-cancel" id="cancelRaiseBtn" data-i18n="cancel">取消</button>
+            <button class="btn-confirm" id="confirmRaiseBtn" data-i18n="confirm">确认</button>
+          </div>
+        </div>
+        <button class="next-btn hidden" id="nextHandBtn" data-i18n="nextHand">下一手</button>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<div id="joinRoomOverlay" class="overlay hidden">
+  <div class="overlay-card">
+    <h2 data-i18n="joinRoomTitle">加入房间</h2>
+    <p data-i18n="joinRoomDesc">输入朋友分享的房间号：</p>
+    <input type="text" id="joinRoomInput" class="room-input" placeholder="例如 nano-pt-abc12" maxlength="32">
+    <div class="overlay-actions">
+      <button class="btn-primary" id="joinRoomConfirmBtn" data-i18n="join">加入</button>
+      <button class="btn-secondary" id="joinRoomCancelBtn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="rebuyOverlay" class="overlay hidden">
+  <div class="overlay-card">
+    <h2 data-i18n="rebuyTitle">筹码耗尽</h2>
+    <p id="rebuyMsg"></p>
+    <div class="overlay-actions">
+      <button class="btn-primary" id="rebuyGameBtn" data-i18n="rebuyContinue">补码继续</button>
+      <button class="btn-secondary" id="leaveGameBtn" data-i18n="leaveTable">离桌</button>
+    </div>
+  </div>
+</div>
+
+<div id="gameOverOverlay" class="overlay hidden">
+  <div class="overlay-card">
+    <h2 data-i18n="gameOverTitle">对局结束</h2>
+    <p id="gameOverMsg"></p>
+    <div class="overlay-actions">
+      <button class="btn-primary" id="newGameBtn" data-i18n="backToLobby">返回大厅</button>
+    </div>
+  </div>
+</div>
+
+<div id="walletOverlay" class="overlay hidden">
+  <div class="overlay-card">
+    <h2 data-i18n="walletTitle">连接钱包</h2>
+    <p data-i18n="walletDesc">请用币安 Web3 钱包或 MetaMask 连接 BNB Chain。</p>
+    <div class="overlay-actions">
+      <button class="btn-primary" id="walletConnectBtn" data-i18n="connectWallet">连接钱包</button>
+      <button class="btn-secondary" id="walletCloseBtn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/i18n.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/avatars.js"></script>
+<script src="js/deck.js"></script>
+<script src="js/evaluator.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/wallet.js"></script>
+<script src="js/mqtt-room.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
