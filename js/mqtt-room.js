@@ -34,7 +34,7 @@ window.PokerMQTT = (function(){
 
       let resolved = false;
       client.on('connect', function(){
-        console.log('[MQTT] connected');
+        console.log('[MQTT] connected as', myId);
         client.subscribe(LOBBY_TOPIC, function(){
           if(!resolved){ resolved = true; resolve(); }
         });
@@ -46,7 +46,7 @@ window.PokerMQTT = (function(){
         try { msg = JSON.parse(payload.toString()); } catch(e){ return; }
         if(topic === LOBBY_TOPIC){
           handleLobbyMessage(msg);
-        } else if(topic === roomTopic(currentRoomId)){
+        } else if(currentRoomId && topic === roomTopic(currentRoomId)){
           handleRoomMessage(msg);
         }
       });
@@ -110,15 +110,15 @@ window.PokerMQTT = (function(){
     currentRoomId = roomId;
     return new Promise(function(resolve){
       client.subscribe(roomTopic(roomId), function(){
-        /* 连发 3 次，避免消息丢失 */
-        for(let i = 0; i < 3; i++){
+        /* 连发 5 次 join_request，确保房主收到 */
+        for(let i = 0; i < 5; i++){
           setTimeout(function(){
             publish(roomTopic(roomId), {
               type: 'join_request',
               peerId: myId,
               name: nickname
             });
-          }, i * 300);
+          }, i * 400);
         }
         resolve();
       });
@@ -164,14 +164,11 @@ window.PokerMQTT = (function(){
             seat: Object.keys(roomPlayers).length,
             isSelf: false
           };
-          /* 立即回复一份完整玩家列表 */
-          broadcastRoomPlayers();
-          broadcastLobbyAnnounce({ level: currentLevel, mode: currentMode });
-          notifyRoomPlayers();
-        } else {
-          /* 重复请求，也回复一次 */
-          broadcastRoomPlayers();
         }
+        /* 每次都回复玩家列表 */
+        broadcastRoomPlayers();
+        broadcastLobbyAnnounce({ level: currentLevel, mode: currentMode });
+        notifyRoomPlayers();
         break;
 
       case 'player_list':
@@ -216,7 +213,6 @@ window.PokerMQTT = (function(){
         break;
 
       case 'sync_request':
-        /* 房主收到客户端同步请求 */
         if(isHost && onRoomMessage) onRoomMessage(msg);
         break;
     }
@@ -242,11 +238,16 @@ window.PokerMQTT = (function(){
     const allReady = ids.every(function(pid){ return roomPlayers[pid].ready; });
     if(!allReady) return;
     const order = ids.slice().sort();
-    publish(roomTopic(currentRoomId), {
-      type: 'game_start',
-      playerOrder: order,
-      hostId: myId
-    });
+    /* 广播 5 次 */
+    for(let i = 0; i < 5; i++){
+      setTimeout(function(){
+        publish(roomTopic(currentRoomId), {
+          type: 'game_start',
+          playerOrder: order,
+          hostId: myId
+        });
+      }, i * 400);
+    }
     if(onRoomMessage) onRoomMessage({ type: 'game_start', playerOrder: order, hostId: myId });
   }
 
@@ -258,6 +259,18 @@ window.PokerMQTT = (function(){
   function sendRoomMessage(msg){
     if(!currentRoomId) return;
     publish(roomTopic(currentRoomId), msg);
+  }
+
+  function broadcastGameStart(order){
+    for(let i = 0; i < 5; i++){
+      setTimeout(function(){
+        publish(roomTopic(currentRoomId), {
+          type: 'game_start',
+          playerOrder: order,
+          hostId: myId
+        });
+      }, i * 300);
+    }
   }
 
   let currentLevel = '';
@@ -272,6 +285,8 @@ window.PokerMQTT = (function(){
     joinRoom: joinRoom,
     leaveRoom: leaveRoom,
     sendRoomMessage: sendRoomMessage,
+    broadcastGameStart: broadcastGameStart,
+    broadcastRoomPlayers: broadcastRoomPlayers,
     setRoomInfo: function(level, mode){
       currentLevel = level; currentMode = mode;
       if(isHost && currentRoomId) broadcastLobbyAnnounce({ level: level, mode: mode });
